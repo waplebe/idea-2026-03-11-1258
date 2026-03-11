@@ -1,0 +1,260 @@
+---FILE: README.md
+# Simple Task Manager API
+
+**Description:**
+
+This project provides a simple RESTful API for managing tasks. It allows users to create, read, update, and delete tasks. The frontend provides a basic interface for interacting with the API.
+
+**Why it's useful:**
+
+A task manager is a fundamental tool for productivity. This API provides a foundation for building more complex task management applications or integrating task management functionality into existing systems.
+
+**Installation:**
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/simple-task-manager.git
+    cd simple-task-manager
+    ```
+
+2.  **Set up the backend:**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # Linux/macOS
+    # venv\Scripts\activate  # Windows
+    pip install -r requirements.txt
+    ```
+
+3.  **Set up the frontend:**
+    ```bash
+    npm install
+    npm start
+    ```
+
+**Running the Backend:**
+
+```bash
+python app.py
+```
+
+This will start the Flask server, typically on `http://127.0.0.1:5000/`.
+
+**Running the Frontend:**
+
+The frontend is a simple HTML page served by `index.html`.  It automatically opens in your browser when the backend is running.
+
+**API Endpoints:**
+
+*   `GET /tasks`: Retrieves all tasks.
+*   `GET /tasks/<task_id>`: Retrieves a specific task by ID.
+*   `POST /tasks`: Creates a new task.  Requires a JSON payload with `title` and `description`.
+*   `PUT /tasks/<task_id>`: Updates an existing task. Requires a JSON payload with `title` and/or `description`.
+*   `DELETE /tasks/<task_id>`: Deletes a task.
+
+**Example Usage:**
+
+*   **Create a task:**
+    `curl -X POST -H "Content-Type: application/json" -d '{"title": "Grocery Shopping", "description": "Buy milk, eggs, and bread"}' http://127.0.0.1:5000/tasks`
+
+*   **Get all tasks:**
+    `curl http://127.0.0.1:5000/tasks`
+
+*   **Update a task:**
+    `curl -X PUT -H "Content-Type: application/json" -d '{"title": "Grocery Shopping", "description": "Buy milk, eggs, bread, and cheese"}' http://127.0.0.1:5000/tasks/1`
+
+**Configuration:**
+
+Environment variables are used for configuration.  A `.env.example` file is provided to show the expected variables.  You should create a `.env` file in the root directory of the project and populate it with your desired values.
+
+**License:**
+
+MIT License
+
+---FILE: .gitignore
+.env
+venv/
+__pycache__/
+*.pyc
+*.log
+*.db
+---FILE: app.py
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import sqlite3
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+DATABASE = 'tasks.db'
+
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db_connection()
+    with app.app_context():
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT
+            )
+        ''')
+        conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/tasks', methods=['GET'])
+def get_tasks():
+    conn = get_db_connection()
+    tasks = conn.execute('SELECT * FROM tasks').fetchall()
+    conn.close()
+    return jsonify([dict(task) for task in tasks])
+
+@app.route('/tasks/<int:task_id>', methods=['GET'])
+def get_task(task_id):
+    conn = get_db_connection()
+    task = conn.execute('SELECT * FROM tasks WHERE id = ?', (task_id,)).fetchone()
+    conn.close()
+    if task is None:
+        return jsonify({'message': 'Task not found'}), 404
+    return jsonify(dict(task))
+
+@app.route('/tasks', methods=['POST'])
+def create_task():
+    data = request.get_json()
+    title = data.get('title')
+    description = data.get('description')
+
+    if not title:
+        return jsonify({'message': 'Title is required'}), 400
+
+    conn = get_db_connection()
+    conn.execute('INSERT INTO tasks (title, description) VALUES (?, ?)', (title, description))
+    conn.commit()
+    task_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+    conn.close()
+    return jsonify({'id': task_id, 'title': title, 'description': description}), 201
+
+@app.route('/tasks/<int:task_id>', methods=['PUT'])
+def update_task(task_id):
+    data = request.get_json()
+    title = data.get('title')
+    description = data.get('description')
+
+    conn = get_db_connection()
+    conn.execute('UPDATE tasks SET title = ?, description = ? WHERE id = ?', (title, description, task_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Task updated'})
+
+@app.route('/tasks/<int:task_id>', methods=['DELETE'])
+def delete_task(task_id):
+    conn = get_db_connection()
+    conn.execute('DELETE FROM tasks WHERE id = ?', (task_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Task deleted'})
+
+if __name__ == '__main__':
+    app.run(debug=True)
+---FILE: index.html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Task Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Simple Task Manager</h1>
+
+    <button id="newTaskButton">Add New Task</button>
+
+    <div id="taskList">
+        <!-- Tasks will be displayed here -->
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>
+---FILE: scripts.js
+document.addEventListener('DOMContentLoaded', function() {
+    const newTaskButton = document.getElementById('newTaskButton');
+    const taskList = document.getElementById('taskList');
+
+    // Fetch tasks from the API
+    fetch('/tasks')
+        .then(response => response.json())
+        .then(tasks => {
+            taskList.innerHTML = ''; // Clear existing tasks
+            tasks.forEach(task => {
+                const taskElement = document.createElement('div');
+                taskElement.innerHTML = `
+                    <h3>${task.title}</h3>
+                    <p>${task.description}</p>
+                    <button class="deleteTaskButton" data-id="${task.id}">Delete</button>
+                `;
+                taskList.appendChild(taskElement);
+            });
+        })
+        .catch(error => console.error('Error fetching tasks:', error));
+
+    // Add new task
+    newTaskButton.addEventListener('click', function() {
+        // Implement adding new task functionality here
+        // This is a placeholder
+        alert('Add new task functionality not implemented.');
+    });
+
+    // Delete task
+    taskList.addEventListener('click', function(event) {
+        if (event.target.classList.contains('deleteTaskButton')) {
+            const taskId = event.target.dataset.id;
+            if (confirm('Are you sure you want to delete this task?')) {
+                fetch(`/tasks/${taskId}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Refresh task list after deletion
+                        fetch('/tasks')
+                            .then(response => response.json())
+                            .then(tasks => {
+                                taskList.innerHTML = '';
+                                tasks.forEach(task => {
+                                    const taskElement = document.createElement('div');
+                                    taskElement.innerHTML = `
+                                        <h3>${task.title}</h3>
+                                        <p>${task.description}</p>
+                                        <button class="deleteTaskButton" data-id="${task.id}">Delete</button>
+                                    `;
+                                    taskList.appendChild(taskElement);
+                                });
+                            });
+                    });
+            }
+        }
+    });
+});
+---FILE: styles.css
+body {
+    font-family: sans-serif;
+    margin: 20px;
+}
+
+h1 {
+    text-align: center;
+}
+
+#taskList {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-around;
+}
+
+.task {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin: 10px;
+    width: 300px
