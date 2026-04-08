@@ -103,5 +103,32 @@ def delete_task_frontend(task_id):
     conn.close()
     return jsonify({'message': 'Task deleted'})
 
+@app.route('/tasks', methods=['GET'])
+def get_tasks_with_pagination(page=1, limit=10):
+    """
+    Retrieves tasks with pagination support.
+
+    Args:
+        page (int, optional): The page number. Defaults to 1.
+        limit (int, optional): The number of tasks per page. Defaults to 10.
+
+    Returns:
+        JSON: A JSON response containing the tasks for the specified page and limit.
+    """
+    offset = (page - 1) * limit
+    conn = get_db_connection()
+    tasks = conn.execute('''
+        SELECT * FROM tasks
+        LIMIT ? OFFSET ?
+    ''', (limit, offset)).fetchall()
+    conn.close()
+    total_tasks = conn.execute('SELECT COUNT(*) FROM tasks').fetchone()[0]
+    return jsonify({
+        'tasks': [dict(task) for task in tasks],
+        'total_pages': (total_tasks + limit - 1) // limit,
+        'current_page': page,
+        'limit': limit
+    })
+
 if __name__ == '__main__':
     app.run(debug=True)
